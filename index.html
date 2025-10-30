@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIM AR Viewer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>BIM AR Viewer</h1>
+        <input type="file" id="model-input">
+        <button id="ar-button">Enter AR</button>
+    </header>
+    <main>
+        <div id="viewer-container"></div>
+        <div id="loading-spinner" class="hidden"></div>
+        <div id="error-message" class="hidden"></div>
+    </main>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
