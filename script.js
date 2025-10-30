@@ -1,142 +1,204 @@
-import { IfcViewerAPI } from 'https://cdn.jsdelivr.net/npm/web-ifc-viewer@1.0.218/dist/IFCjs-bundle.js';
-import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
-import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/OBJLoader.js';
-import { FBXLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/FBXLoader.js';
-import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js';
+// Import necessary modules from Three.js CDN
+import * as THREE from 'https://cdn.skypack.dev/three@0.132.2/build/three.module.js';
+import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js';
 
-const container = document.getElementById('viewer-container');
-const viewer = new IfcViewerAPI({ container });
-viewer.axes.setAxes();
-viewer.grid.setGrid();
-
-const scene = viewer.context.getScene();
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-scene.add(ambientLight);
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-directionalLight.position.set(0, 10, 0);
-scene.add(directionalLight);
-
-const arButton = document.getElementById('ar-button');
-const input = document.getElementById('model-input');
-const loadingSpinner = document.getElementById('loading-spinner');
-const errorMessage = document.getElementById('error-message');
-
-function showLoading() {
-    loadingSpinner.classList.remove('hidden');
-}
-
-function hideLoading() {
-    loadingSpinner.classList.add('hidden');
-}
-
-function showError(message) {
-    errorMessage.textContent = message;
-    errorMessage.classList.remove('hidden');
-}
-
-function hideError() {
-    errorMessage.classList.add('hidden');
-}
-
-input.addEventListener('change', async (changed) => {
-    showLoading();
-    hideError();
-
-    const file = changed.target.files[0];
-    const fileExtension = file.name.split('.').pop().toLowerCase();
-
-    try {
-        if (fileExtension === 'ifc') {
-            const ifcURL = URL.createObjectURL(file);
-            await viewer.IFC.loadIfcUrl(ifcURL, true);
-        } else {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                let loader;
-                let object;
-                const scene = viewer.context.getScene();
-                switch (fileExtension) {
-                    case 'obj':
-                        loader = new OBJLoader();
-                        object = loader.parse(e.target.result);
-                        scene.add(object);
-                        fitModelToFrame(object);
-                        break;
-                    case 'fbx':
-                        loader = new FBXLoader();
-                        object = loader.parse(e.target.result);
-                        scene.add(object);
-                        fitModelToFrame(object);
-                        break;
-                    case 'glb':
-                    case 'gltf':
-                        loader = new GLTFLoader();
-                        loader.parse(e.target.result, '', (gltf) => {
-                            scene.add(gltf.scene);
-                            fitModelToFrame(gltf.scene);
-                        });
-                        break;
-                }
-            };
-
-            if (fileExtension === 'obj') {
-                reader.readAsText(file);
-            } else {
-                reader.readAsArrayBuffer(file);
-            }
-        }
-    } catch (error) {
-        showError('Error loading model: ' + error.message);
-    } finally {
-        hideLoading();
+// --- STATE MANAGEMENT ---
+const state = {
+    selectedProject: null,
+    projects: [
+        { id: 'box', name: 'Project: Box', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Box/glTF-Binary/Box.glb' },
+        { id: 'avocado', name: 'Project: Avocado', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Avocado/glTF-Binary/Avocado.glb' },
+        { id: 'fish', name: 'Project: Barramundi Fish', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/BarramundiFish/glTF-Binary/BarramundiFish.glb' }
+    ],
+    three: {
+        scene: null,
+        camera: null,
+        renderer: null,
+        controls: null,
+        model: null,
+        requestId: null
     }
-});
+};
 
-function fitModelToFrame(object) {
-    const box = new THREE.Box3().setFromObject(object);
-    const boxSize = box.getSize(new THREE.Vector3());
-    const boxCenter = box.getCenter(new THREE.Vector3());
+// --- DOM ELEMENTS ---
+const projectSelectionScreen = document.getElementById('project-selection-screen');
+const viewerScreen = document.getElementById('viewer-screen');
+const projectList = document.getElementById('project-list');
+const launchButton = document.getElementById('launch-button');
+const backButton = document.getElementById('back-button');
+const projectTitle = document.getElementById('project-title');
+const canvasContainer = document.getElementById('canvas-container');
 
-    const modelRadius = boxSize.length() / 2;
-    const camera = viewer.context.getCamera();
-    const fov = camera.fov * (Math.PI / 180);
-    const cameraDistance = Math.abs(modelRadius / Math.sin(fov / 2));
+// --- FUNCTIONS ---
 
-    const direction = new THREE.Vector3(0, 0, 1)
-        .applyQuaternion(camera.quaternion)
-        .multiplyScalar(cameraDistance)
-        .add(boxCenter);
-
-    camera.position.copy(direction);
-    camera.updateProjectionMatrix();
-    camera.lookAt(boxCenter);
-}
-
-async function startAR() {
-    const supported = await navigator.xr.isSessionSupported('immersive-ar');
-    if (!supported) {
-        arButton.textContent = 'AR not supported';
-        return;
-    }
-
-    const session = await navigator.xr.requestSession('immersive-ar');
-    const renderer = viewer.context.getRenderer();
-    renderer.xr.enabled = true;
-    await renderer.xr.setSession(session);
-    arButton.textContent = 'Stop AR';
-
-    session.addEventListener('end', () => {
-        renderer.xr.enabled = false;
-        arButton.textContent = 'Enter AR';
+/**
+ * Renders the list of projects on the selection screen.
+ */
+function renderProjectList() {
+    projectList.innerHTML = '';
+    state.projects.forEach(project => {
+        const li = document.createElement('li');
+        li.textContent = project.name;
+        li.dataset.projectId = project.id;
+        li.addEventListener('click', () => handleProjectSelection(project));
+        projectList.appendChild(li);
     });
 }
 
-arButton.addEventListener('click', () => {
-    const currentSession = viewer.context.getRenderer().xr.getSession();
-    if (currentSession) {
-        currentSession.end();
-    } else {
-        startAR();
+/**
+ * Handles the selection of a project from the list.
+ * @param {object} project - The selected project object.
+ */
+function handleProjectSelection(project) {
+    state.selectedProject = project;
+
+    // Update visual selection
+    const items = projectList.querySelectorAll('li');
+    items.forEach(item => {
+        if (item.dataset.projectId === project.id) {
+            item.classList.add('selected');
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+
+    launchButton.disabled = false;
+}
+
+/**
+ * Switches the view from the project selection to the 3D viewer.
+ */
+function showViewer() {
+    if (!state.selectedProject) return;
+
+    projectTitle.textContent = state.selectedProject.name;
+    projectSelectionScreen.style.display = 'none';
+    viewerScreen.style.display = 'flex'; // Use flex to match CSS
+
+    initThreeScene(state.selectedProject.url);
+}
+
+/**
+ * Switches the view from the 3D viewer back to the project selection.
+ */
+function showProjectSelection() {
+    projectSelectionScreen.style.display = 'block';
+    viewerScreen.style.display = 'none';
+
+    cleanupThreeScene();
+}
+
+/**
+ * Initializes the Three.js scene, camera, renderer, and loads the model.
+ * @param {string} modelUrl - The URL of the 3D model to load.
+ */
+function initThreeScene(modelUrl) {
+    // 1. Scene
+    state.three.scene = new THREE.Scene();
+    state.three.scene.background = new THREE.Color(0x16213e);
+
+    // 2. Camera
+    const aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
+    state.three.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+    state.three.camera.position.set(2, 2, 3);
+
+    // 3. Renderer
+    state.three.renderer = new THREE.WebGLRenderer({ antialias: true });
+    state.three.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+    state.three.renderer.setPixelRatio(window.devicePixelRatio);
+    canvasContainer.appendChild(state.three.renderer.domElement);
+
+    // 4. Controls
+    state.three.controls = new OrbitControls(state.three.camera, state.three.renderer.domElement);
+    state.three.controls.enableDamping = true;
+
+    // 5. Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    state.three.scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(5, 10, 7.5);
+    state.three.scene.add(directionalLight);
+
+    // 6. Model Loading
+    const loader = new GLTFLoader();
+    loader.load(modelUrl, (gltf) => {
+        state.three.model = gltf.scene;
+
+        // Center the model
+        const box = new THREE.Box3().setFromObject(state.three.model);
+        const center = box.getCenter(new THREE.Vector3());
+        state.three.model.position.sub(center);
+
+        state.three.scene.add(state.three.model);
+    }, undefined, (error) => {
+        console.error('An error happened while loading the model:', error);
+    });
+
+    // 7. Start Animation Loop
+    animate();
+}
+
+/**
+ * The animation loop for rendering the 3D scene.
+ */
+function animate() {
+    state.three.requestId = requestAnimationFrame(animate);
+    state.three.controls.update(); // Required for damping
+    state.three.renderer.render(state.three.scene, state.three.camera);
+}
+
+/**
+ * Cleans up the Three.js scene to free up resources.
+ */
+function cleanupThreeScene() {
+    if (state.three.requestId) {
+        cancelAnimationFrame(state.three.requestId);
     }
-});
+
+    if (state.three.scene) {
+        state.three.scene.traverse(object => {
+            if (object.isMesh) {
+                if (object.geometry) object.geometry.dispose();
+                if (object.material) {
+                    if (Array.isArray(object.material)) {
+                        object.material.forEach(material => material.dispose());
+                    } else {
+                        object.material.dispose();
+                    }
+                }
+            }
+        });
+    }
+
+    if (state.three.renderer) {
+        state.three.renderer.dispose();
+        canvasContainer.removeChild(state.three.renderer.domElement);
+    }
+
+    // Reset state
+    Object.assign(state.three, {
+        scene: null, camera: null, renderer: null, controls: null, model: null, requestId: null
+    });
+}
+
+/**
+ * Handles window resize events to keep the viewport correct.
+ */
+function onWindowResize() {
+    if (state.three.camera && state.three.renderer) {
+        state.three.camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
+        state.three.camera.updateProjectionMatrix();
+        state.three.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+    }
+}
+
+// --- INITIALIZATION ---
+function main() {
+    renderProjectList();
+    launchButton.addEventListener('click', showViewer);
+    backButton.addEventListener('click', showProjectSelection);
+    window.addEventListener('resize', onWindowResize);
+}
+
+main();

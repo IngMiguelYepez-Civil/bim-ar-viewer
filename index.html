@@ -1,22 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIM AR Viewer</title>
+    <title>BIM Viewer</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>BIM AR Viewer</h1>
-        <input type="file" id="model-input">
-        <button id="ar-button">Enter AR</button>
-    </header>
-    <main>
-        <div id="viewer-container"></div>
-        <div id="loading-spinner" class="hidden"></div>
-        <div id="error-message" class="hidden"></div>
-    </main>
+    <div id="app-container">
+        <!-- Pantalla de Selección de Proyectos -->
+        <div id="project-selection-screen">
+            <header>
+                <h1>BIM Viewer</h1>
+            </header>
+            <main>
+                <h2>Mis Proyectos</h2>
+                <ul id="project-list">
+                    <!-- Los proyectos se cargarán aquí con JavaScript -->
+                </ul>
+                <button id="launch-button" disabled>Launch</button>
+            </main>
+        </div>
+
+        <!-- Pantalla del Visor 3D -->
+        <div id="viewer-screen" style="display: none;">
+            <header>
+                <button id="back-button">←</button>
+                <h1 id="project-title">Nombre del Proyecto</h1>
+            </header>
+            <div id="canvas-container"></div>
+        </div>
+
+        <footer>
+            <a href="https://www.linkedin.com/in/ing-miguel-yepez/" target="_blank">LinkedIn</a>
+            <a href="https://www.patreon.com/posts/invitame-un-cafe-142422413" target="_blank">Patreon</a>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
