@@ -2,14 +2,19 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.132.2/build/three.module.js';
 import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js';
+import { OBJLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/MTLLoader.js';
+import { FBXLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/FBXLoader.js';
+import { IFCLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/IFCLoader.js';
 
 // --- STATE MANAGEMENT ---
 const state = {
     selectedProject: null,
     projects: [
-        { id: 'box', name: 'Project: Box', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Box/glTF-Binary/Box.glb' },
-        { id: 'avocado', name: 'Project: Avocado', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Avocado/glTF-Binary/Avocado.glb' },
-        { id: 'fish', name: 'Project: Barramundi Fish', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/BarramundiFish/glTF-Binary/BarramundiFish.glb' }
+        { id: 'ifc-house', name: 'IFC: Sample House', url: 'https://raw.githubusercontent.com/youshengCode/IfcSampleFiles/main/Ifc4_SampleHouse.ifc' },
+        { id: 'obj-watch', name: 'OBJ: Pocket Watch', url: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/obj/watch/watch.obj' },
+        { id: 'fbx-car', name: 'FBX: Mercedes Benz', url: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/fbx/Mercedes.fbx' },
+        { id: 'glb-avocado', name: 'GLB: Avocado', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Avocado/glTF-Binary/Avocado.glb' }
     ],
     three: {
         scene: null,
@@ -17,7 +22,9 @@ const state = {
         renderer: null,
         controls: null,
         model: null,
-        requestId: null
+        requestId: null,
+        mixer: null,
+        clock: new THREE.Clock()
     }
 };
 
@@ -101,7 +108,7 @@ function initThreeScene(modelUrl) {
     // 2. Camera
     const aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
     state.three.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
-    state.three.camera.position.set(2, 2, 3);
+    state.three.camera.position.set(5, 5, 5);
 
     // 3. Renderer
     state.three.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -113,27 +120,107 @@ function initThreeScene(modelUrl) {
     state.three.controls = new OrbitControls(state.three.camera, state.three.renderer.domElement);
     state.three.controls.enableDamping = true;
 
+    // Add a grid helper for visual debugging of scale and position
+    const gridHelper = new THREE.GridHelper(100, 30);
+    state.three.scene.add(gridHelper);
+
     // 5. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     state.three.scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    hemisphereLight.position.set(0, 200, 0);
+    state.three.scene.add(hemisphereLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
     directionalLight.position.set(5, 10, 7.5);
+    directionalLight.castShadow = true;
     state.three.scene.add(directionalLight);
 
-    // 6. Model Loading
-    const loader = new GLTFLoader();
-    loader.load(modelUrl, (gltf) => {
-        state.three.model = gltf.scene;
+    // 6. Model Loading (Dynamic Loader Selection)
+    const fileExtension = modelUrl.split('.').pop().toLowerCase();
+    let loader;
 
-        // Center the model
+    const onModelLoad = (model) => {
+        state.three.model = model;
+
+        // Center and scale the model
         const box = new THREE.Box3().setFromObject(state.three.model);
+        const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
-        state.three.model.position.sub(center);
+
+        // Auto-scaling
+        const maxSize = Math.max(size.x, size.y, size.z);
+        const scale = 10 / maxSize;
+        state.three.model.scale.set(scale, scale, scale);
+
+        // Auto-centering
+        state.three.model.position.sub(center.multiplyScalar(scale));
+
+        // Special camera adjustments for large IFC models
+        if (state.selectedProject.url.endsWith('.ifc')) {
+            const radius = size.length() * scale;
+            state.three.camera.position.set(radius, radius, radius);
+            state.three.controls.target.copy(center.multiplyScalar(scale));
+            state.three.camera.far = radius * 5;
+            state.three.camera.updateProjectionMatrix();
+        }
+
 
         state.three.scene.add(state.three.model);
-    }, undefined, (error) => {
+    };
+
+    const onError = (error) => {
         console.error('An error happened while loading the model:', error);
-    });
+    };
+
+    if (fileExtension === 'ifc') {
+        loader = new IFCLoader();
+        // The IFCLoader needs to know where to find the WASM module.
+        loader.ifcManager.setWasmPath('https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/ifc/');
+        loader.load(modelUrl, onModelLoad, undefined, onError);
+    } else if (fileExtension === 'obj') {
+        const mtlLoader = new MTLLoader();
+        const objLoader = new OBJLoader();
+
+        // The MTL file usually has the same name and is in the same directory.
+        const mtlUrl = modelUrl.replace('.obj', '.mtl');
+
+        mtlLoader.load(mtlUrl, (materials) => {
+            materials.preload();
+            objLoader.setMaterials(materials);
+            objLoader.load(modelUrl, onModelLoad, undefined, onError);
+        }, undefined, (error) => {
+            // If the MTL file is not found, load the OBJ without materials.
+            console.warn(`Could not load material file ${mtlUrl}:`, error);
+            objLoader.load(modelUrl, onModelLoad, undefined, onError);
+        });
+        return; // Exit here because loading is async with two steps
+    } else if (fileExtension === 'fbx') {
+        loader = new FBXLoader();
+        loader.load(modelUrl, (object) => {
+            // FBX models can contain animations. We need a mixer to handle them.
+            state.three.mixer = new THREE.AnimationMixer(object);
+            if (object.animations.length > 0) {
+                const action = state.three.mixer.clipAction(object.animations[0]);
+                action.play();
+            }
+
+            // Ensure materials are correctly applied to all parts of the model.
+            object.traverse(function (child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            onModelLoad(object);
+        }, undefined, onError);
+        return; // Exit here for custom async handling
+    } else { // Default to GLTF/GLB
+        loader = new GLTFLoader();
+        loader.load(modelUrl, (gltf) => onModelLoad(gltf.scene), undefined, onError);
+    }
 
     // 7. Start Animation Loop
     animate();
@@ -145,6 +232,12 @@ function initThreeScene(modelUrl) {
 function animate() {
     state.three.requestId = requestAnimationFrame(animate);
     state.three.controls.update(); // Required for damping
+
+    // Update the animation mixer if it exists
+    if (state.three.mixer) {
+        state.three.mixer.update(state.three.clock.getDelta());
+    }
+
     state.three.renderer.render(state.three.scene, state.three.camera);
 }
 
