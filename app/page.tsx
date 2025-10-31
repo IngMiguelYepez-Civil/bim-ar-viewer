@@ -124,6 +124,7 @@ export default function Home() {
                     width={50}
                     height={50}
                     alt="Avatar"
+                    unoptimized
                   />
                 ),
               }}
